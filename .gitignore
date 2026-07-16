@@ -1,0 +1,19 @@
+# Database — rebuilt on deploy
+bible.db
+
+# Large source files — downloaded on deploy
+*.cmti
+*.lexi
+kjv.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+
+# Temp/inspection scripts
+inspect_cmti.py
+inspect_lexi.py
+check_commentary.py
