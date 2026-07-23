@@ -32,7 +32,8 @@ A free, open-source Bible study API serving KJV verses, Expositor's Bible commen
 ---
 
 ## Local Setup
-**Project folder:** `C:\Users\mhmco\OneDrive\Desktop\Projects\Bible_Commentary_App`
+**Project folder:** `C:\Users\mhmco\Projects\Bible_Commentary_App`
+_(Moved out of OneDrive on 2026-07-23 to avoid Git/SQLite sync conflicts.)_
 
 **Local database has full data:**
 - 31,102 KJV verses (Pure Cambridge Edition)
@@ -41,7 +42,7 @@ A free, open-source Bible study API serving KJV verses, Expositor's Bible commen
 
 **To run locally:**
 ```
-cd "C:\Users\mhmco\OneDrive\Desktop\Projects\Bible_Commentary_App"
+cd "C:\Users\mhmco\Projects\Bible_Commentary_App"
 python app.py
 ```
 
