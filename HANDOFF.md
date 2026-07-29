@@ -286,8 +286,38 @@ set `API_KEYS` (comma-separated) in the Render dashboard and callers must send
 strings show up in server and proxy logs. If you do enable it, update the
 landing page, which currently advertises "No key required."
 
-### 4. Remote MCP Connector
-Once the site is live, update `mcp_server.py` to support HTTP/SSE transport so it can be added as a remote connector on claude.ai (not just Claude Desktop).
+### 4. Remote MCP Connector — DONE (July 28, 2026)
+**Endpoint: `https://actsxviixi.org/mcp`** (Streamable HTTP, no auth).
+Anyone adds it as a custom connector in Claude — no Python, no config file.
+Requires a paid Claude plan; custom connectors are not on the free tier.
+
+`server.py` is a Starlette app serving the MCP endpoint at `/mcp` and the Flask
+API everywhere else, from one Render service. Start command is now:
+
+```
+uvicorn server:application --host 0.0.0.0 --port $PORT
+```
+
+`gunicorn app:app` still works as a rollback — it serves the REST API without
+`/mcp`.
+
+**Four things here are load-bearing. Each one broke the deploy when absent:**
+
+1. **`mcp>=1.27,<2`** — mcp 2.0.0 relocated `mcp.server.fastmcp`; an unbounded
+   pin resolved to it and the service exited with `ModuleNotFoundError`.
+2. **Host allowlist** — the SDK blocks DNS rebinding and its defaults cover only
+   localhost, so production rejected everything with `Invalid Host header`.
+   `PUBLIC_HOSTS` names the real hostnames; extend via `MCP_ALLOWED_HOSTS`.
+   Do not disable the check.
+3. **`ACTS_API_BASE=inprocess`** — co-hosted, the tools must not call the API
+   over HTTP. A blocking self-call occupies the single event loop that has to
+   answer it and the server deadlocks. `server.py` sets this before importing
+   `mcp_server`, which reads it at import time.
+4. **Route splicing, not `Mount("/mcp")`** — Starlette's Mount matches only
+   `/mcp/...`, so a bare POST to `/mcp` fell through to Flask and 404'd, and
+   bare `/mcp` is exactly what clients send.
+
+Local stdio still works unchanged: point `ACTS_API_BASE` at a real URL.
 
 ### 5. More Commentary Sources
 Schema supports multiple sources. Could add:
