@@ -1,5 +1,5 @@
 # Acts XVII:XI Project — Handoff Document
-**Last updated:** July 15, 2026
+**Last updated:** July 28, 2026
 
 ---
 
@@ -24,10 +24,12 @@ A free, open-source Bible study API serving KJV verses, Expositor's Bible commen
 - MCP connector (`mcp_server.py`) registered in Claude Desktop
 
 ### What's Limited Right Now
-- Only 13 sample verses on the live server (full KJV not yet uploaded)
-- Commentary and lexicon tables empty on live server
+- Only 13 sample verses on the live server — the prebuilt database is now
+  published (Release `data-v1`), but the Render build command still has to be
+  updated by hand in the dashboard. See Next Step 1.
+- Commentary and lexicon tables empty on live server (same cause)
 - Domain not yet pointed at Render
-- MCP connector only works locally (requires Flask running on localhost:5000)
+- API key auth is implemented but switched off until `API_KEYS` is set on Render
 
 ---
 
@@ -88,17 +90,47 @@ GET /health
 **Config location:** `C:\Users\mhmco\AppData\Roaming\Claude\claude_desktop_config.json`
 **Tools:** `get_verse`, `search_bible`, `get_commentary`, `lookup_lexicon`, `bible_health`
 
-To use: Flask must be running locally, then restart Claude Desktop.
+The connector targets whatever `ACTS_API_BASE` points at (default
+`http://localhost:5000`), with an optional `ACTS_API_KEY`. Once the live server
+has full data, switch `ACTS_API_BASE` to `https://actsxviixi.onrender.com` and
+Flask no longer needs to be running locally at all.
+
+> **Careful — Claude Desktop can silently drop this block.** On 2026-07-28 the
+> running app rewrote `claude_desktop_config.json` from its own in-memory state
+> seconds after an edit, stripping `mcpServers` entirely. That is almost
+> certainly how the earlier registration was lost. **Fully quit Claude Desktop
+> before editing this file**, then relaunch and confirm the block survived.
 
 ---
 
 ## Next Steps (in order)
 
-### 1. Get Full Data on Render
-Upload `kjv.txt`, `eb.cmti`, and `strongsplus.lexi` as assets to a GitHub Release on the actsxviixi repo. Then update the Render build command to download and load them:
+### 1. Get Full Data on Render — ONE MANUAL STEP LEFT
+The prebuilt database is published as a public GitHub Release: **`data-v1`**
+(`bible.db.gz`, 37MB compressed / 114MB expanded — verified to restore cleanly
+with all 31,102 verses, 2,248 commentaries, and 14,197 lexicon entries).
+
+Rather than loading from source on every build, Render just downloads it.
+In the Render dashboard → Settings, set:
+
+**Build Command**
 ```
-pip install -r requirements.txt && curl -L <url>/kjv.txt -o kjv.txt && python loader.py kjv.txt && curl -L <url>/eb.cmti -o eb.cmti && python load_commentary.py && curl -L <url>/strongsplus.lexi -o strongsplus.lexi && python load_lexicon.py
+pip install -r requirements.txt && curl -L https://github.com/treaderman/actsxviixi/releases/download/data-v1/bible.db.gz -o bible.db.gz && gunzip -f bible.db.gz
 ```
+
+**Start Command**
+```
+gunicorn app:app
+```
+
+Then Manual Deploy → Clear build cache & deploy. Verify with:
+```
+curl https://actsxviixi.onrender.com/health
+```
+Expect `verses_loaded: 31102`, `commentaries_loaded: 2248`, `lexicon_loaded: 14197`.
+
+_Note: `gunicorn app:app` never calls `init_db()`, so `bible.db` must exist at
+the end of the build — which the command above guarantees._
 
 ### 2. Point Domain
 In Namecheap DNS for actsxviixi.org:
@@ -106,8 +138,16 @@ In Namecheap DNS for actsxviixi.org:
 - Add CNAME record: `www` → `actsxviixi.onrender.com`
 Then add the custom domain in Render → Settings → Custom Domains.
 
-### 3. Add API Key Auth
-Before going fully public, add a simple API key check to protect the endpoints from abuse.
+### 3. Add API Key Auth — CODE DONE, NOT YET ENABLED
+`app.py` reads an `API_KEYS` environment variable (comma-separated list).
+When it is unset or empty, auth is **disabled** and everything behaves as
+before — this is why local development needs no key.
+
+To turn it on in production, add an `API_KEYS` env var in the Render dashboard.
+Clients then pass `X-API-Key: <key>` (preferred) or `?key=<key>`.
+`/health` and `/` stay public so uptime checks keep working.
+
+Prefer the header: query strings show up in server and proxy logs.
 
 ### 4. Remote MCP Connector
 Once the site is live, update `mcp_server.py` to support HTTP/SSE transport so it can be added as a remote connector on claude.ai (not just Claude Desktop).
