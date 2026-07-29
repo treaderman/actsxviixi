@@ -319,11 +319,34 @@ uvicorn server:application --host 0.0.0.0 --port $PORT
 
 Local stdio still works unchanged: point `ACTS_API_BASE` at a real URL.
 
-### 5. More Commentary Sources
-Schema supports multiple sources. Could add:
-- Matthew Henry (public domain)
-- Geneva Notes (public domain)
-- John Gill (public domain)
+### 5. More Commentary Sources — John Gill DONE (July 28, 2026)
+**34,342 commentary notes live**, from two sources:
+
+| Source | Notes |
+|---|---|
+| John Gill's Exposition | 32,094 — 30,984 verse-level, 1,110 introductions, all 66 books |
+| The Expositor's Bible | 2,248 |
+
+Filter with `?source=John+Gill`. Book introductions sit at chapter 0, chapter
+introductions have a null verse — the convention the Expositor's data set.
+
+**Reloading Gill** (`load_gill.py`) needs the text extracted from the Word file
+first; the source is binary OLE2, not text:
+
+```
+antiword -w 0 "C:\Users\mhmco\Downloads\Bible_Reference\John Gill's Commentary on the Bible.doc" > gill.txt
+python load_gill.py gill.txt
+```
+
+`antiword` ships with Git for Windows at `/mingw64/bin/antiword`. The loader is
+idempotent — it deletes its own source rows before inserting.
+
+> **Use `fix_commentary.py`, never `load_commentary.py`, for the Expositor's
+> data.** The latter is superseded: it neither clears existing rows (so it
+> silently doubles the table) nor populates `verse_end`. Both were left in
+> place, but only `fix_commentary.py` is correct.
+
+Still available, all public domain: Matthew Henry, Geneva Notes.
 
 ---
 
