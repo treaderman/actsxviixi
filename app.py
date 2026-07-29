@@ -6,6 +6,7 @@ Flask server — lightweight JSON endpoints over SQLite
 import os
 
 from flask import Flask, jsonify, request, abort
+from flask_limiter import Limiter
 from db import get_connection, init_db
 
 app = Flask(__name__)
@@ -15,6 +16,44 @@ API_KEYS = {k.strip() for k in os.environ.get("API_KEYS", "").split(",") if k.st
 
 # Endpoints reachable without a key — uptime checks and the landing docs.
 PUBLIC_PATHS = {"/health", "/"}
+
+
+# ── rate limiting ─────────────────────────────────────────────────────────────
+
+def _client_ip() -> str:
+    """
+    The real caller's address.
+
+    Render fronts services with Cloudflare, so request.remote_addr is a proxy —
+    keying on it would put every caller in the world into one shared bucket and
+    rate-limit them collectively. Cloudflare sets CF-Connecting-IP to the
+    original client, which is the value to trust here.
+
+    X-Forwarded-For is a spoofable fallback, but the only thing it guards is a
+    courtesy limit on public-domain text, so that trade is fine.
+    """
+    cf = request.headers.get("CF-Connecting-IP")
+    if cf:
+        return cf.strip()
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+RATE_LIMITS = [
+    limit.strip()
+    for limit in os.environ.get("RATE_LIMITS", "60 per minute; 2000 per hour").split(";")
+    if limit.strip()
+]
+
+limiter = Limiter(
+    key_func=_client_ip,
+    app=app,
+    default_limits=RATE_LIMITS,
+    storage_uri="memory://",   # single gunicorn worker; resets on restart
+    headers_enabled=True,      # advertise the limit so clients can self-pace
+)
 
 
 # ── auth ──────────────────────────────────────────────────────────────────────
@@ -312,6 +351,7 @@ def _counts() -> dict:
 
 
 @app.get("/")
+@limiter.exempt
 def index():
     """
     Landing page. Serves HTML to browsers and JSON to everything else, so the
@@ -328,6 +368,8 @@ def index():
                            "Expositor's Bible commentary, and Strong's lexicon.",
             "source":      "https://github.com/treaderman/actsxviixi",
             "auth_required": bool(API_KEYS),
+            "rate_limits": RATE_LIMITS,
+            "bulk_download": "https://github.com/treaderman/actsxviixi/releases",
             "data":        counts,
             "endpoints": [
                 {"endpoint": name, "description": desc, "example": example}
@@ -340,6 +382,7 @@ def index():
         f'<td><a href="{example}"><code>{example}</code></a></td></tr>'
         for name, desc, example in ENDPOINTS
     )
+    limits = " and ".join(RATE_LIMITS)
     return f"""<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
@@ -362,7 +405,8 @@ def index():
 <h1>Acts XVII:XI</h1>
 <p class="verse">&ldquo;&hellip;searched the scriptures daily, whether those
 things were so.&rdquo;</p>
-<p>A free, open-source Bible study API serving structured JSON. No key required.</p>
+<p>A free, open-source Bible study API serving structured JSON.
+<strong>No key required.</strong></p>
 <ul>
   <li><strong>{counts['verses']:,}</strong> KJV verses across
       <strong>{counts['books']}</strong> books</li>
@@ -376,6 +420,10 @@ things were so.&rdquo;</p>
   </tbody>
 </table>
 <footer>
+  Rate limited to {limits} per IP, as a courtesy so the service stays up for
+  everyone. Need bulk or offline access? Download the whole database from
+  <a href="https://github.com/treaderman/actsxviixi/releases">Releases</a>.
+  <br><br>
   Source on <a href="https://github.com/treaderman/actsxviixi">GitHub</a>.
   All texts are public domain.
 </footer>
@@ -385,6 +433,7 @@ things were so.&rdquo;</p>
 # ── health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
+@limiter.exempt
 def health():
     counts = _counts()
     return jsonify({
@@ -403,6 +452,17 @@ def health():
 @app.errorhandler(404)
 def http_error(e):
     return jsonify({"error": e.description}), e.code
+
+
+@app.errorhandler(429)
+def rate_limited(e):
+    return jsonify({
+        "error": "Rate limit exceeded. This is a free, open API — please pace "
+                 "your requests.",
+        "limit": str(e.description),
+        "bulk_access": "For heavy or offline use, download the whole database: "
+                       "https://github.com/treaderman/actsxviixi/releases",
+    }), 429
 
 
 # ── entry point ───────────────────────────────────────────────────────────────
