@@ -248,9 +248,18 @@ def get_commentary():
             abort(404, f"Book '{book_name}' not found")
 
         if verse is not None:
-            # Match exact verse OR any range that contains the requested verse
-            verse_filter = "AND c.verse <= ? AND (c.verse_end IS NULL OR c.verse_end >= ?)"
-            params = [book_id, chapter, verse, verse]
+            # A row is either a single verse (verse_end NULL) or a range.
+            #
+            # The earlier form, "c.verse <= ? AND (c.verse_end IS NULL OR
+            # c.verse_end >= ?)", treated every single-verse row as an open
+            # ended range: asking for verse 11 also matched verses 1-10.
+            # Barely visible with a sparse commentary, glaring once a
+            # verse-by-verse source was loaded.
+            verse_filter = (
+                "AND ((c.verse_end IS NULL AND c.verse = ?) "
+                "OR (c.verse_end IS NOT NULL AND c.verse <= ? AND c.verse_end >= ?))"
+            )
+            params = [book_id, chapter, verse, verse, verse]
         else:
             verse_filter = "AND c.verse IS NULL"
             params = [book_id, chapter]

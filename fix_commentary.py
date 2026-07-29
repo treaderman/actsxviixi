@@ -3,8 +3,10 @@
 2. Clears duplicate data
 3. Reloads from eb.cmti with proper range fields
 """
+import html
 import sqlite3
 import re
+import unicodedata
 from db import get_connection, init_db
 
 CMTI_PATH = "eb.cmti"
@@ -31,10 +33,20 @@ ESWORD_BOOKS = [
 _TAG_RE = re.compile(r"<[^>]+>")
 
 def strip_html(text: str) -> str:
+    """
+    Strip markup, then decode entities.
+
+    This used to replace a hand-written list of six entities, so every other
+    one survived into the database as a visible escape code — &quot; alone
+    reached 2,198 of the 2,248 rows. html.unescape() covers named and numeric
+    forms alike. Same defect as load_lexicon.py had.
+
+    Decoding runs after tag stripping so an entity-encoded angle bracket can
+    never be mistaken for markup, and the result is normalised to NFC.
+    """
     text = _TAG_RE.sub("", text)
-    for ent, rep in [("&rsquo;","'"),("&lsquo;","'"),("&ldquo;","“"),
-                     ("&rdquo;","”"),("&amp;","&"),("&nbsp;"," ")]:
-        text = text.replace(ent, rep)
+    text = html.unescape(text)
+    text = unicodedata.normalize("NFC", text)
     return " ".join(text.split()).strip()
 
 

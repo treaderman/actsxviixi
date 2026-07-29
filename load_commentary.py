@@ -9,7 +9,9 @@ The .cmti has three levels:
 Book numbering in e-Sword: 1=Genesis ... 39=Malachi, 40=Matthew ... 66=Revelation
 """
 
+import html
 import sqlite3
+import unicodedata
 import re
 from db import get_connection, init_db
 
@@ -38,10 +40,22 @@ ESWORD_BOOKS = [
 _TAG_RE = re.compile(r"<[^>]+>")
 
 def strip_html(text: str) -> str:
+    """
+    Strip markup, then decode entities.
+
+    This previously replaced a hand-written list of six named entities, so
+    everything else survived into the database as visible escape codes —
+    &quot; most of all, which reached 2,198 of the 2,248 rows. html.unescape()
+    handles named and numeric forms alike. Same defect that affected the
+    lexicon loader; see load_lexicon.py.
+
+    Decoding runs after tag stripping so an entity-encoded angle bracket can
+    never be mistaken for markup, and the result is normalised to NFC so
+    composed characters match what the KJV text uses.
+    """
     text = _TAG_RE.sub("", text)
-    text = text.replace("&rsquo;", "'").replace("&ldquo;", "“") \
-               .replace("&rdquo;", "”").replace("&amp;", "&") \
-               .replace("&nbsp;", " ").replace("&lsquo;", "‘")
+    text = html.unescape(text)
+    text = unicodedata.normalize("NFC", text)
     return " ".join(text.split()).strip()
 
 
