@@ -21,11 +21,43 @@ mcp = FastMCP(
         "Use get_verse to fetch a specific passage, search_bible to find verses by keyword, "
         "and get_commentary to retrieve study notes on a passage."
     ),
+    # Every tool here is a pure read, so there is no session state worth
+    # keeping. Stateless mode avoids needing request affinity when hosted.
+    stateless_http=True,
+    # Exposed at exactly /mcp — server.py splices this route into the outer
+    # ASGI app rather than mounting it. See the note there.
+    streamable_http_path="/mcp",
 )
+
+
+# When the MCP server is co-hosted with the API in one process (see server.py),
+# it must NOT reach the API over HTTP. The tool would block the single event
+# loop that has to serve that very request, and the server deadlocks against
+# itself. Calling the WSGI app directly keeps it in-process and synchronous.
+IN_PROCESS = API_BASE == "inprocess"
+
+_wsgi_client = None
+
+
+def _inprocess_get(path: str, qs: str) -> dict:
+    global _wsgi_client
+    if _wsgi_client is None:
+        from app import app as flask_app
+        _wsgi_client = flask_app.test_client()
+
+    response = _wsgi_client.get(f"{path}?{qs}")
+    payload = response.get_json(silent=True)
+    if payload is None:
+        return {"error": f"Unexpected non-JSON response ({response.status_code})"}
+    return payload
 
 
 def _get(path: str, params: dict) -> dict:
     qs = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
+
+    if IN_PROCESS:
+        return _inprocess_get(path, qs)
+
     req = urllib.request.Request(f"{API_BASE}{path}?{qs}")
     if API_KEY:
         req.add_header("X-API-Key", API_KEY)

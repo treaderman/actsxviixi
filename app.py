@@ -51,9 +51,23 @@ limiter = Limiter(
     key_func=_client_ip,
     app=app,
     default_limits=RATE_LIMITS,
-    storage_uri="memory://",   # single gunicorn worker; resets on restart
+    storage_uri="memory://",   # single worker; resets on restart
     headers_enabled=True,      # advertise the limit so clients can self-pace
 )
+
+
+@limiter.request_filter
+def _exempt_loopback() -> bool:
+    """
+    The co-hosted MCP server (see server.py) reaches these endpoints over
+    loopback. Without this it would spend the public per-IP budget on itself
+    and throttle every AI client collectively.
+
+    Traffic from outside always arrives through Cloudflare, which sets
+    CF-Connecting-IP, so a real client cannot reach this branch by forging
+    X-Forwarded-For.
+    """
+    return _client_ip() in {"127.0.0.1", "::1"}
 
 
 # ── auth ──────────────────────────────────────────────────────────────────────
