@@ -4,12 +4,15 @@ Exposes Bible study tools that Claude (or any MCP client) can call.
 Proxies requests to the local Flask API at http://localhost:5000.
 """
 
+import os
 import urllib.request
 import urllib.parse
 import json
 from mcp.server.fastmcp import FastMCP
 
-API_BASE = "http://localhost:5000"
+# Point at the live API by setting ACTS_API_BASE, e.g. https://actsxviixi.onrender.com
+API_BASE = os.environ.get("ACTS_API_BASE", "http://localhost:5000").rstrip("/")
+API_KEY = os.environ.get("ACTS_API_KEY", "")
 
 mcp = FastMCP(
     name="acts-xvii-xi",
@@ -23,9 +26,24 @@ mcp = FastMCP(
 
 def _get(path: str, params: dict) -> dict:
     qs = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
-    url = f"{API_BASE}{path}?{qs}"
-    with urllib.request.urlopen(url, timeout=10) as r:
-        return json.load(r)
+    req = urllib.request.Request(f"{API_BASE}{path}?{qs}")
+    if API_KEY:
+        req.add_header("X-API-Key", API_KEY)
+
+    # Render's free tier sleeps when idle; a cold start can take up to a minute.
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        try:
+            return {"error": json.load(e)["error"], "status": e.code}
+        except Exception:
+            return {"error": f"HTTP {e.code} from {API_BASE}{path}", "status": e.code}
+    except urllib.error.URLError as e:
+        return {
+            "error": f"Could not reach the Bible API at {API_BASE} ({e.reason}). "
+                     "If using the local server, make sure Flask is running."
+        }
 
 
 # ── tools ──────────────────────────────────────────────────────────────────

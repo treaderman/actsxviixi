@@ -3,10 +3,34 @@ Acts XVII:XI Bible Study API
 Flask server — lightweight JSON endpoints over SQLite
 """
 
+import os
+
 from flask import Flask, jsonify, request, abort
 from db import get_connection, init_db
 
 app = Flask(__name__)
+
+# Comma-separated list of valid keys. Unset/empty → auth disabled (local dev).
+API_KEYS = {k.strip() for k in os.environ.get("API_KEYS", "").split(",") if k.strip()}
+
+# Endpoints reachable without a key — uptime checks and the landing docs.
+PUBLIC_PATHS = {"/health", "/"}
+
+
+# ── auth ──────────────────────────────────────────────────────────────────────
+
+@app.before_request
+def require_api_key():
+    if not API_KEYS or request.path in PUBLIC_PATHS:
+        return None
+
+    key = request.headers.get("X-API-Key") or request.args.get("key", "")
+    if key not in API_KEYS:
+        return jsonify({
+            "error": "Invalid or missing API key. "
+                     "Pass it as the X-API-Key header or a 'key' query param."
+        }), 401
+    return None
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -269,8 +293,18 @@ def get_lexicon():
 @app.get("/health")
 def health():
     with get_connection() as conn:
-        verse_count = conn.execute("SELECT COUNT(*) FROM verses").fetchone()[0]
-    return jsonify({"status": "ok", "verses_loaded": verse_count})
+        counts = {
+            table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in ("books", "verses", "commentaries", "lexicon")
+        }
+    return jsonify({
+        "status":            "ok",
+        "auth_required":     bool(API_KEYS),
+        "verses_loaded":     counts["verses"],   # kept for existing clients
+        "books_loaded":      counts["books"],
+        "commentaries_loaded": counts["commentaries"],
+        "lexicon_loaded":    counts["lexicon"],
+    })
 
 
 # ── error handlers ────────────────────────────────────────────────────────────
