@@ -7,6 +7,8 @@ Definition is HTML — we parse out transliteration, pronunciation, and definiti
 
 import sqlite3
 import re
+import html
+import unicodedata
 from db import get_connection, init_db
 
 LEXI_PATH = "strongsplus.lexi"
@@ -14,15 +16,30 @@ LEXI_PATH = "strongsplus.lexi"
 _TAG_RE   = re.compile(r"<[^>]+>")
 _SPACE_RE = re.compile(r"\s+")
 
-HTML_ENTITIES = {
-    "&rsquo;": "'", "&lsquo;": "'", "&ldquo;": "“", "&rdquo;": "”",
-    "&amp;": "&", "&nbsp;": " ", "&rsquo;": "'", "&mdash;": "—",
-}
 
 def strip_html(text: str) -> str:
-    for ent, rep in HTML_ENTITIES.items():
-        text = text.replace(ent, rep)
+    """
+    Strip tags, then decode HTML entities and normalize to NFC.
+
+    The source uses numeric character references for the combining diacritics
+    that Strong's transliterations depend on (U+0302 circumflex, U+0304 macron,
+    U+0306 breve, ...), so a fixed table of named entities is not enough --
+    html.unescape() handles both named and numeric forms.
+
+    Decoding happens AFTER tag stripping so that any entity-encoded angle
+    bracket cannot be mistaken for markup. NFC composes "a" + U+0302 into the
+    single codepoint "â"; combinations with no precomposed form (e.g. dotless
+    "ı" + U+0302) correctly stay decomposed.
+    """
     text = _TAG_RE.sub(" ", text)
+    text = html.unescape(text)
+    # A handful of source rows are double-escaped ("&amp;amp;" for a literal
+    # "&"). One correct unescape pass leaves no entities behind anywhere else,
+    # so a surviving "&amp;" can only be that -- decode it rather than serve it
+    # raw. Deliberately narrow: unescaping repeatedly until stable would also
+    # corrupt any text that legitimately spells out an entity.
+    text = text.replace("&amp;", "&")
+    text = unicodedata.normalize("NFC", text)
     return _SPACE_RE.sub(" ", text).strip()
 
 

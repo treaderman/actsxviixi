@@ -1,5 +1,7 @@
 # Database — rebuilt on deploy
 bible.db
+bible.db.bak*
+bible.db.gz
 
 # Large source files — downloaded on deploy
 *.cmti
