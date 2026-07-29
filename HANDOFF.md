@@ -6,30 +6,33 @@
 ## What This Is
 A free, open-source Bible study API serving KJV verses, Expositor's Bible commentary, and Strong's Hebrew/Greek lexicon as structured JSON. Designed to be queried by AI assistants (Claude) via an MCP connector.
 
-**Domain:** actsxviixi.org (purchased on Namecheap, not yet pointed at Render)
+**Live API:** https://actsxviixi.org (also reachable at https://actsxviixi.onrender.com)
 **GitHub:** https://github.com/treaderman/actsxviixi
-**Live API:** https://actsxviixi.onrender.com
 
 ---
 
 ## Current State
 
 ### What's Working
-- Flask API live on Render at `actsxviixi.onrender.com`
+- Flask API live at `https://actsxviixi.org` with the **full dataset**:
+  66 books, 31,102 verses, 2,248 commentaries, 14,197 lexicon entries
 - `/verse` — fetch single verse or range
 - `/search` — full-text keyword search with OT/NT filter
 - `/commentary` — Expositor's Bible notes by passage
 - `/lexicon` — Strong's Hebrew/Greek lookup by number or keyword
-- `/health` — server status and verse count
+- `/health` — server status plus per-table row counts
 - MCP connector (`mcp_server.py`) registered in Claude Desktop
 
 ### What's Limited Right Now
-- Only 13 sample verses on the live server — the prebuilt database is now
-  published (Release `data-v1`), but the Render build command still has to be
-  updated by hand in the dashboard. See Next Step 1.
-- Commentary and lexicon tables empty on live server (same cause)
-- Domain not yet pointed at Render
+- `www.actsxviixi.org` was still at "Certificate Pending" when this was written.
+  The apex works; if www is still failing TLS, re-click **Verify** in Render.
 - API key auth is implemented but switched off until `API_KEYS` is set on Render
+- **Free instance spins down when idle** — the first request after a quiet period
+  takes 50+ seconds. `mcp_server.py` uses a 60s timeout for this reason; any
+  browser client or uptime check will see the same lag.
+- MCP connector still points at `localhost:5000` by default. Now that the live
+  API has full data, set `ACTS_API_BASE=https://actsxviixi.org` in the Claude
+  Desktop config and local Flask is no longer needed.
 
 ---
 
@@ -132,37 +135,28 @@ Expect `verses_loaded: 31102`, `commentaries_loaded: 2248`, `lexicon_loaded: 141
 _Note: `gunicorn app:app` never calls `init_db()`, so `bible.db` must exist at
 the end of the build — which the command above guarantees._
 
-### 2. Point Domain — RENDER SIDE DONE, DNS SIDE PENDING
-Both `actsxviixi.org` and `www.actsxviixi.org` are already added in
-Render → Settings → Custom Domains (Render handles the www → apex redirect).
-Both sit at "Waiting for DNS" until the records below exist.
+### 2. Point Domain — DONE (July 28, 2026)
+`https://actsxviixi.org` is live with a valid certificate, and plain HTTP
+301-redirects to HTTPS.
 
 DNS is **Namecheap BasicDNS** (nameservers `dns1/dns2.registrar-servers.com`),
-so edit under Domain List → actsxviixi.org → Manage → **Advanced DNS**.
+edited under Domain List → actsxviixi.org → Manage → **Advanced DNS**:
 
-**First delete the two parking records:**
-| Type | Host | Current value |
+| Type | Host | Value |
 |---|---|---|
-| A Record | `@` | `192.64.119.177` |
-| CNAME Record | `www` | `parkingpage.namecheap.com` |
+| ALIAS Record | `@` | `actsxviixi.onrender.com` |
+| CNAME Record | `www` | `actsxviixi.onrender.com` |
 
-**Then add:**
-| Type | Host | Value | TTL |
-|---|---|---|---|
-| ALIAS Record | `@` | `actsxviixi.onrender.com` | Automatic |
-| CNAME Record | `www` | `actsxviixi.onrender.com` | Automatic |
+The Namecheap parking records (a CNAME on `www` and a **URL Redirect Record** on
+`@`) were deleted. The SPF `TXT` record under MAIL SETTINGS is email forwarding —
+leave it alone.
 
-If Namecheap won't offer ALIAS, use an **A Record** `@` → `216.24.57.1` instead.
-Prefer ALIAS: Render's IP can change, and an A record would then break.
+> Do not use a plain `CNAME` on the apex. Namecheap rejects it, and the DNS spec
+> forbids CNAME coexisting with the zone's SOA/NS records. ALIAS is preferred over
+> a bare `A` record because Render's IPs can change — the ALIAS currently resolves
+> to two addresses, where the documented A-record fallback (`216.24.57.1`) is one.
 
-> A plain `CNAME` on the root (`@`) does **not** work — Namecheap rejects it, and
-> the DNS spec forbids CNAME coexisting with the zone's SOA/NS records. Use
-> ALIAS/ANAME or A for the apex. (The earlier version of this doc said CNAME `@`;
-> that was wrong.)
-
-Then return to Render → Custom Domains → **Verify**. Propagation can take up to
-24 hours, and Render issues the TLS certificate automatically once DNS resolves.
-Leave the Render subdomain enabled until the custom domain serves traffic.
+The Render subdomain is still enabled, so `actsxviixi.onrender.com` also works.
 
 ### 3. Add API Key Auth — CODE DONE, NOT YET ENABLED
 `app.py` reads an `API_KEYS` environment variable (comma-separated list).
