@@ -9,13 +9,39 @@ import urllib.request
 import urllib.parse
 import json
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 # Point at the live API by setting ACTS_API_BASE, e.g. https://actsxviixi.onrender.com
 API_BASE = os.environ.get("ACTS_API_BASE", "http://localhost:5000").rstrip("/")
 API_KEY = os.environ.get("ACTS_API_KEY", "")
 
+# The MCP SDK rejects unknown Host headers to block DNS rebinding, and its
+# defaults cover only localhost — a remotely hosted server must name itself or
+# every request fails with "Invalid Host header". Kept enabled rather than
+# switched off; add hostnames via MCP_ALLOWED_HOSTS (comma-separated).
+PUBLIC_HOSTS = [
+    host.strip()
+    for host in os.environ.get(
+        "MCP_ALLOWED_HOSTS",
+        "actsxviixi.org,www.actsxviixi.org,actsxviixi.onrender.com",
+    ).split(",")
+    if host.strip()
+]
+
+_LOCAL_HOSTS = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+
+TRANSPORT_SECURITY = TransportSecuritySettings(
+    enable_dns_rebinding_protection=True,
+    # Both bare and ":port" forms: proxies may or may not include the port.
+    allowed_hosts=[h for host in PUBLIC_HOSTS for h in (host, f"{host}:*")]
+    + _LOCAL_HOSTS,
+    allowed_origins=[o for host in PUBLIC_HOSTS for o in (f"https://{host}", f"https://{host}:*")]
+    + ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"],
+)
+
 mcp = FastMCP(
     name="acts-xvii-xi",
+    transport_security=TRANSPORT_SECURITY,
     instructions=(
         "Bible study tools for the King James Bible. "
         "Use get_verse to fetch a specific passage, search_bible to find verses by keyword, "
