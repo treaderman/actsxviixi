@@ -288,15 +288,105 @@ def get_lexicon():
         })
 
 
+# ── index ─────────────────────────────────────────────────────────────────────
+
+ENDPOINTS = [
+    ("GET /verse",      "Fetch a verse or range",
+     "/verse?book=John&chapter=3&verse=16"),
+    ("GET /search",     "Full-text search, optional OT/NT filter",
+     "/search?q=living+water&testament=NT&limit=20"),
+    ("GET /commentary", "Expositor's Bible notes for a passage",
+     "/commentary?book=John&chapter=3&verse=16"),
+    ("GET /lexicon",    "Strong's Hebrew/Greek entry or keyword search",
+     "/lexicon?num=G3056"),
+    ("GET /health",     "Server status and row counts", "/health"),
+]
+
+
+def _counts() -> dict:
+    with get_connection() as conn:
+        return {
+            table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in ("books", "verses", "commentaries", "lexicon")
+        }
+
+
+@app.get("/")
+def index():
+    """
+    Landing page. Serves HTML to browsers and JSON to everything else, so the
+    domain is readable by a person without breaking programmatic clients.
+    """
+    counts = _counts()
+
+    accept = request.accept_mimetypes
+    wants_html = accept["text/html"] > accept["application/json"]
+    if not wants_html:
+        return jsonify({
+            "name":        "Acts XVII:XI",
+            "description": "Free, open-source Bible study API — KJV verses, "
+                           "Expositor's Bible commentary, and Strong's lexicon.",
+            "source":      "https://github.com/treaderman/actsxviixi",
+            "auth_required": bool(API_KEYS),
+            "data":        counts,
+            "endpoints": [
+                {"endpoint": name, "description": desc, "example": example}
+                for name, desc, example in ENDPOINTS
+            ],
+        })
+
+    rows = "\n".join(
+        f'<tr><td><code>{name}</code></td><td>{desc}</td>'
+        f'<td><a href="{example}"><code>{example}</code></a></td></tr>'
+        for name, desc, example in ENDPOINTS
+    )
+    return f"""<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acts XVII:XI — Bible Study API</title>
+<style>
+  :root {{ color-scheme: light dark; }}
+  body {{ font-family: system-ui, sans-serif; line-height: 1.6; margin: 0 auto;
+         max-width: 46rem; padding: 2.5rem 1.25rem; }}
+  h1 {{ margin-bottom: .25rem; font-size: 1.75rem; }}
+  .verse {{ color: #6b6b6b; font-style: italic; margin: 0 0 2rem; }}
+  table {{ border-collapse: collapse; width: 100%; display: block;
+           overflow-x: auto; }}
+  th, td {{ text-align: left; padding: .5rem .6rem;
+            border-bottom: 1px solid rgba(128,128,128,.3); vertical-align: top; }}
+  code {{ font-size: .9em; }}
+  ul {{ padding-left: 1.2rem; }}
+  footer {{ margin-top: 2.5rem; font-size: .9em; color: #6b6b6b; }}
+</style>
+<h1>Acts XVII:XI</h1>
+<p class="verse">&ldquo;&hellip;searched the scriptures daily, whether those
+things were so.&rdquo;</p>
+<p>A free, open-source Bible study API serving structured JSON. No key required.</p>
+<ul>
+  <li><strong>{counts['verses']:,}</strong> KJV verses across
+      <strong>{counts['books']}</strong> books</li>
+  <li><strong>{counts['commentaries']:,}</strong> Expositor's Bible entries</li>
+  <li><strong>{counts['lexicon']:,}</strong> Strong's lexicon entries</li>
+</ul>
+<table>
+  <thead><tr><th>Endpoint</th><th>Description</th><th>Example</th></tr></thead>
+  <tbody>
+{rows}
+  </tbody>
+</table>
+<footer>
+  Source on <a href="https://github.com/treaderman/actsxviixi">GitHub</a>.
+  All texts are public domain.
+</footer>
+</html>"""
+
+
 # ── health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
-    with get_connection() as conn:
-        counts = {
-            table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            for table in ("books", "verses", "commentaries", "lexicon")
-        }
+    counts = _counts()
     return jsonify({
         "status":            "ok",
         "auth_required":     bool(API_KEYS),
